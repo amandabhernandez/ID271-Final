@@ -1,0 +1,101 @@
+---
+title: "ID271 Final Instructions"
+date: "Due March 10, 2023 before midnight (EST)"
+output: 
+  html_document:
+    toc_float: true
+    toc: true
+---
+
+Basics
+---------------
+As part of your final group project, you will be working in the same midterm groups and will be uploading one submission per group consisting of 1) your R markdown and 2) corresponding HTML knitted file. While the approach you take is up to you and your team, keep in mind the concepts we have discussed and learned throughout the course.
+
+Similar to the midterm project, you will need to complete the following:
+
+- Write the statistical analysis portion of a methods section (<500 words) justifying the method choices you make. This includes explicitly stating assumptions. Feel free to leverage subject knowledge, evidence from the literature (include citations), summary statistics, preliminary results that help you build up to your final model.
+
+- Write a results section (<500 words) highlight your main and secondary results in a coherent fashion.
+
+- Include a brief conclusion paragraph (<100 words) summarizing the main takeaways. Be sure to refer back to the main study question.
+
+You are expected to use epidemiological language accurately in your writing and to be concise as if you were writing a publishable scientific paper.
+
+
+
+Description of the data set
+---------------
+You and your team will be using a subset of data from participants of the Veterans Administration Normative Aging Study (NAS), a longitudinal study established in 1963. The study enrolled 2,280 men from the Greater Boston area, who were aged between 21 to 80 years and were determined to be free of known chronic medical conditions by an initial health screening. Participants visited the study center repeatedly for physical examinations, where they underwent a series of health tests (e.g., tests for pulmonary function, heart rate variability, and blood pressure) and questionnaires every ~4 years. The follow-up visits took place in the morning after an overnight fast and abstinence from smoking. Blood samples were taken at each visit and were used for lipid analysis.
+
+During the follow-up period, black carbon (BC), temperature, and relative humidity were measured at a central monitoring site located on the roof of Countway Library, Harvard Medical School, in Boston, MA. Single day lags and moving averages for BC and temperature were calculated and included in this dataset for your convenience.
+
+The dataset you are going to use includes a subset of **968** subjects with a total of **2454** observations.
+
+Variables
+---------------
+The dataset (nas_bp.rds) contains the following variables:
+
+- ID: subject ID
+- DATE: date as an integer (origin = 1/1/1970)
+- VISIT: visit number
+- YEAR: year
+- WARMCOLD: Warm/Cold season (1=warm, 0=cold)
+- WKDAY: day of the week
+- SINTIME: a sine function of date (sin((2$\pi$*DATE)/365.24))
+- COSTIME: a cosine function of date (cos((2$\pi$*DATE)/365.24))
+- SBP: Systolic Blood Pressure in mmHg
+- AGE: age in years
+- RACE: Race (1=White, 2=Black, 3 = Hispanic White, 4 = Hispanic Black, 5=American Indian)
+- TWODRINK: Do you usually take two or more drinks a day? (0=no, 1=yes)
+- CHD: Coronary heart disease (ICDA-8 codes 410-414: 0=no, 1=yes)
+- DIABETE: Physician-diagnosed DM (0=no, 1=yes)
+- BMI: Body Mass Index in kg/m$^2$
+- SMK:Cigarette smoking status (1=never, 3=current, 4=former)
+- FBG: Fasting blood glucose (1:<110mg/dL, 2:>110 or <126 mg/dL, 3:>126 mg/dL)
+- NEDUC: Years of education
+- STATIN: Taking statin medication at that visit? (0=no, 1=yes)
+- BC24H: Black carbon level on the same day of each visit in $\mu g/m^3$
+- BCD1: Black carbon level on the previous 1 day (lag 1) of each visit in $\mu g/m^3$
+- BCD2: Black carbon level on the previous 2 days (lag 2) of each visit in $\mu g/m^3$
+- BCMA2: Moving average of black carbon exposure on the same day and the previous 1 day of each visit in $\mu g/m^3$
+- RHUM24H: Relative humidity on the same day of each visit in %
+- TEMPC24H: Ambient temperature on the same day of each visit in $^{\circ}C$
+- TMPCD1: Ambient temperature on the previous 1 day (lag 1) of each visit in $^{\circ}C$
+- TMPCD2: Ambient temperature on the previous two days (lag 2) of each visit in $^{\circ}C$
+- TMPCMA2: Moving average of temperature over the same day and previous day (lag) in $^{\circ}C$
+
+Research Questions
+---------------
+- What are the associations of same-day temperature and BC exposure with systolic blood pressure (SBP)?
+- What variables explain effect heterogeneity in the associations, if any?
+- Are there lagged effects of temperature and BC exposure on SBP?
+
+
+Specific Questions
+---------------
+
+These prompts/questions need to be answered in the write-up. These questions are meant to help guide you and your team fully address the research questions.
+
+- What kind of models are appropriate for your study question and dataset? Be sure to include how you specified your model (e.g. degrees of freedom, distribution family, etc.) and any transformations you performed. Note that you can use `SINETIME+COSTIME+as.factor(WKDAY)` simultaneously in your model to control for seasonality.
+
+- Explore the relationship of each continuous covariate with SBP. Show them when appropriate to justify your model specification (e.g., are they linear? Non-linear?)
+
+- Present the dose-response relationship of same-day BC and temperature with SBP. (Is it linear?)
+
+- Compute an effect estimate (and 95% CI) for the same-day BC and temperature with SBP. 
+
+- Does diabetes status modify the effect of same-day BC exposure on SBP? If so, provide the effect estimates (with 95% CI) between BC and SBP among diabetics and non-diabetics, respectively.
+
+- Does the association between SBP and same-day temperature vary by warm and cold seasons? How does the dose-response relationship differ between warm and cold seasons? 
+
+- Are there any subgroups that are particularly vulnerable to the effect of same-day BC exposure on SBP?
+
+Peer Review
+---------------
+Head over to Final project peer review assignment on canvas to complete this portion of the final.
+
+
+Grading
+---------------
+- Group report: 80%
+- Peer evaluation: 20%
