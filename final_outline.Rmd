@@ -40,9 +40,9 @@ tbl_theme <- function(dat, gt = FALSE, caption = "", footer = ""){
 cat_columns <- c("WARMCOLD", "WKDAY", "RACE", "TWODRINK", 
                  "SMK", "CHD", "DIABETE", "FBG", "STATIN")
 
-nas_bp <- readRDS("nas_bp.rds") %>% 
-  mutate(across(any_of(cat_columns), factor),
-         DATE2 = .Date(DATE))
+nas_bp <- readRDS("nas_bp.rds") %>%
+  mutate(across(any_of(cat_columns), factor))
+#          DATE2 = .Date(DATE))
 
 # table(lubridate::month(nas_bp$DATE2), nas_bp$WARMCOLD)
 
