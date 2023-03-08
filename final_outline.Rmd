@@ -19,6 +19,8 @@ pacman::p_load(tidyverse, mgcv, splines, broom, broom.mixed, ggeffects, gtsummar
 #set some global preferences
 theme_set(theme_bw())
 options(digits = 4)
+
+
 tbl_theme <- function(dat, gt = FALSE, caption = "", footer = ""){
   if(gt == FALSE) {
     dat_flex <- dat %>% 
@@ -42,9 +44,7 @@ cat_columns <- c("WARMCOLD", "WKDAY", "RACE", "TWODRINK",
 
 nas_bp <- readRDS("nas_bp.rds") %>%
   mutate(across(any_of(cat_columns), factor))
-#          DATE2 = .Date(DATE))
 
-# table(lubridate::month(nas_bp$DATE2), nas_bp$WARMCOLD)
 
 
 
@@ -74,48 +74,22 @@ nas_bp %>%
                           bins = 10) +
            geom_density(fill = "red", alpha = 0.25)+ 
            facet_wrap(~variable, scales = "free")
- 
-# log transform SBP         
-
-ggplot(nas_bp, aes(x = SBP)) +
-  geom_histogram(aes(y = after_stat(density)),
-                 color = "black",
-                 fill = "white",
-                 bins = 30) +
-  geom_density(fill = "red", alpha = 0.25)
-
-ggplot(nas_bp, aes(x = log(SBP))) +
-  geom_histogram(aes(y = after_stat(density)),
-                 color = "black",
-                 fill = "white",
-                 bins = 30) +
-  geom_density(fill = "red", alpha = 0.25)
-
-
 
 
 ```
 
+
+
+
+- Explore the relationship of each continuous covariate with SBP. Show them when appropriate to justify your model specification (e.g., are they linear? Non-linear?)
+
 ```{r mod1}
 
-# model 1 -- exposure + confounders only
+# model 1 -- exposure + confounders + predictors w splines
 
 mod1_temp <- gamm(SBP ~ s(TEMPC24H, bs = 'cr', fx = FALSE) + 
                     s(RHUM24H, bs = 'cr', fx = FALSE) + 
                     s(BMI, bs = 'cr', fx = FALSE) + 
-                    s(AGE, bs = 'cr', fx = FALSE) + 
-                    # s(NEDUC, bs = 'cr', fx = FALSE) + 
-                    SMK + TWODRINK + STATIN + FBG + 
-                    # control for seasonality 
-                    SINETIME + COSTIME + WKDAY, 
-                  random = list(ID =  ~ 1),
-                  family = gaussian(), data = nas_bp)
-
-
-
-mod1_temp <- gamm(SBP ~ TEMPC24H  + 
-                    RHUM24H + 
-                    BMI + 
                     s(AGE, bs = 'cr', fx = FALSE) + 
                     s(NEDUC, bs = 'cr', fx = FALSE) + 
                     SMK + TWODRINK + STATIN + FBG + 
@@ -130,9 +104,9 @@ as_flextable(mod1_temp$gam)
 
 mod1_bc <- gamm(SBP ~ BC24H + TEMPC24H + 
                   RHUM24H + 
-                  s(BMI, bs = 'cr', fx = FALSE) + 
+                  BMI + 
                   s(AGE, bs = 'cr', fx = FALSE) + 
-                  s(NEDUC, bs = 'cr', fx = FALSE) + 
+                  NEDUC + 
                   SMK + TWODRINK + STATIN + FBG + 
                   # control for seasonality 
                   SINETIME + COSTIME + WKDAY, 
@@ -142,44 +116,37 @@ mod1_bc <- gamm(SBP ~ BC24H + TEMPC24H +
 
 as_flextable(mod1_bc$gam)
 
+# all edfs = 1 except for age, so they are linear and we can remove the splines
+
 ```
-
-
-- Explore the relationship of each continuous covariate with SBP. Show them when appropriate to justify your model specification (e.g., are they linear? Non-linear?)
-
 
 ```{r mod2}
 
-# model 2 -- exp + confounders wo splines
+# model 2 -- exp + confounders + precision vars wo splines
 
+mod2_covars <- c(" +  RHUM24H + BMI + NEDUC + s(AGE, bs = 'cr', fx = FALSE) + SMK + TWODRINK + STATIN + FBG + SINETIME + COSTIME + WKDAY")
 
+mod2_temp <- gamm(as.formula(paste0("SBP ~ TEMPC24H", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
 
-mod2_temp <- gamm(SBP ~ TEMPC24H  + 
-                    RHUM24H + 
-                    BMI + 
-                    s(AGE, bs = 'cr', fx = FALSE) + 
-                    NEDUC + 
-                    SMK + TWODRINK + STATIN + FBG + 
-                    # control for seasonality 
-                    SINETIME + COSTIME + WKDAY, 
-                  random = list(ID =  ~ 1),
-                  family = gaussian(), data = nas_bp)
 
 as_flextable(mod2_temp$gam)
 
+plot(mod2_temp$gam)
 
-mod2_bc <- gamm(SBP ~ BC24H + TEMPC24H  + 
-                    RHUM24H + 
-                    BMI + 
-                    s(AGE, bs = 'cr', fx = FALSE) + 
-                    NEDUC + 
-                    SMK + TWODRINK + STATIN + FBG + 
-                    # control for seasonality 
-                    SINETIME + COSTIME + WKDAY, 
-                  random = list(ID =  ~ 1),
-                  family = gaussian(), data = nas_bp)
+
+mod2_bc <- gamm(as.formula(paste0("SBP ~ BC24H + TEMPC24H", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
+
 
 as_flextable(mod2_bc$gam)
+
+plot(mod2_bc$gam)
+
 
 ```
 
@@ -189,11 +156,14 @@ as_flextable(mod2_bc$gam)
 
 ```{r DR}
 
-ggpredict(mod2_temp$gam, terms = "TEMPC24H") %>% 
+
+dr_mod2_temp <- ggpredict(mod2_temp$gam, terms = "TEMPC24H") %>% 
   plot()
 
-ggpredict(mod2_bc$gam, terms = "BC24H") %>% 
+dr_mod2_bc <- ggpredict(mod2_bc$gam, terms = "BC24H") %>% 
   plot()
+
+plot_grid(dr_mod2_temp, dr_mod2_bc)
 
 ```
 
@@ -202,13 +172,15 @@ ggpredict(mod2_bc$gam, terms = "BC24H") %>%
 
 ```{r est}
 
-broom.mixed::tidy(mod2_temp$gam, parametric = TRUE, conf.int = TRUE) %>% 
-  filter(term %in% c("TEMPC24H")) %>% 
+eff_estimate <- function(mod, term_keep){
+  broom.mixed::tidy(mod, parametric = TRUE, conf.int = TRUE) %>% 
+  filter(term %in% c(term_keep)) %>% 
   tbl_theme()
+}
 
-broom.mixed::tidy(mod2_bc$gam, parametric = TRUE, conf.int = TRUE) %>% 
-  filter(term %in% c("BC24H")) %>% 
-  tbl_theme()
+eff_estimate(mod2_temp$gam, term_keep = "TEMPC24H")
+
+eff_estimate(mod2_bc$gam, term_keep = "BC24H")
 
 
 ```
@@ -218,43 +190,27 @@ broom.mixed::tidy(mod2_bc$gam, parametric = TRUE, conf.int = TRUE) %>%
 
 ```{r diab_emm}
 
-# mod2_diab <- gamm(log(SBP) ~ TEMPC24H + BC24H + RHUM24H + 
-#                     DIABETE*BC24H + 
-#                     # control for seasonality 
-#                     SINETIME + COSTIME + WKDAY,
-#                   random = list(ID =  ~ 1),
-#                   family = gaussian(), data = nas_bp)
-# 
 
-mod2_temp_diab <- gamm(SBP ~ TEMPC24H*DIABETE  + 
-                    RHUM24H + 
-                    BMI + 
-                    s(AGE, bs = 'cr', fx = FALSE) + 
-                    NEDUC + 
-                    SMK + TWODRINK + STATIN + FBG + 
-                    # control for seasonality 
-                    SINETIME + COSTIME + WKDAY, 
-                  random = list(ID =  ~ 1),
-                  family = gaussian(), data = nas_bp)
+
+
+mod2_temp_diab <- gamm(as.formula(paste0("SBP ~ TEMPC24H*DIABETE", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
+
+
+mod2_bc_diab <- gamm(as.formula(paste0("SBP ~ BC24H*DIABETE + TEMPC24H", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
+
 
 as_flextable(mod2_temp_diab$gam)
-
-mod2_bc_diab <- gamm(SBP ~ TEMPC24H  + 
-                       BC24H*DIABETE + 
-                       RHUM24H + 
-                       BMI + 
-                       s(AGE, bs = 'cr', fx = FALSE) + 
-                       NEDUC + 
-                       SMK + TWODRINK + STATIN + FBG + 
-                       # control for seasonality 
-                       SINETIME + COSTIME + WKDAY, 
-                     random = list(ID =  ~ 1),
-                     family = gaussian(), data = nas_bp)
-
 as_flextable(mod2_bc_diab$gam)
 
 
-#it's not significant, so we probs don't have to report est and CIs
+#it's not significant, so we probs don't have to report est and CIs -- so I didn't update this code, but I can if we want them
+#
 # get estimates and std errors (if we decide to report)
 # mod2_diab_interaction_stderrs <- data.frame(mod2_diab$lme$varFix) %>% 
 #   rownames_to_column("term") %>% 
@@ -285,50 +241,18 @@ as_flextable(mod2_bc_diab$gam)
 
 # effect modification by WARMCOLD
 
-mod2_temp_warmcold <- gamm(SBP ~ TEMPC24H*WARMCOLD  + 
-                    RHUM24H + 
-                    BMI + 
-                    s(AGE, bs = 'cr', fx = FALSE) + 
-                    NEDUC + 
-                    SMK + TWODRINK + STATIN + FBG + 
-                    # control for seasonality 
-                    SINETIME + COSTIME + WKDAY, 
-                  random = list(ID =  ~ 1),
-                  family = gaussian(), data = nas_bp)
-
-# mod2_bc_warmcold <- gamm(SBP ~ TEMPC24H  + 
-#                        BC24H*WARMCOLD + 
-#                        RHUM24H + 
-#                        BMI + 
-#                        s(AGE, bs = 'cr', fx = FALSE) + 
-#                        NEDUC + 
-#                        SMK + TWODRINK + STATIN + FBG + 
-#                        # control for seasonality 
-#                        SINETIME + COSTIME + WKDAY, 
-#                      random = list(ID =  ~ 1),
-#                      family = gaussian(), data = nas_bp)
+mod2_temp_warmcold <- gamm(as.formula(paste0("SBP ~ TEMPC24H*WARMCOLD", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
 
 as_flextable(mod2_temp_warmcold$gam)
-# as_flextable(mod2_bc_warmcold$gam)
 
 warmcold0_temp <- ggpredict(mod2_temp_warmcold$gam, terms = "TEMPC24H", condition = c(WARMCOLD = "0"))
 warmcold1_temp <- ggpredict(mod2_temp_warmcold$gam, terms = "TEMPC24H", condition = c(WARMCOLD = "1"))
 
-# warmcold0_bc <- ggpredict(mod2_bc_warmcold$gam, terms = "BC24H", condition = c(WARMCOLD = "0"))
-# warmcold1_bc <- ggpredict(mod2_bc_warmcold$gam, terms = "BC24H", condition = c(WARMCOLD = "1"))
-
-# ggplot(warmcold0) +
-#   #geom_point(nas_bp, mapping = aes(x = TEMPC24H, y = SBP), alpha = 0.1) +
-#   geom_line(aes(x, y = predicted, color = "Cold season")) +
-#   geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), fill = "blue", alpha = .1) + 
-#   geom_line(warmcold1, mapping = aes(x, y = predicted, color = "Warm season")) + 
-#   geom_ribbon(warmcold1, mapping = aes(x = x, ymin = conf.low, ymax = conf.high), fill = "red", alpha = .1) + 
-#   scale_color_manual(name = "Season", values = c("Cold season" = "blue", "Warm season" = "red")) + 
-#   labs(x = "TEMPC24H", y = "Predicted SBP")
-
 
 ggplot(warmcold0_temp) +
-  #geom_point(nas_bp, mapping = aes(x = TEMPC24H, y = SBP), alpha = 0.1) +
   geom_line(aes(x, y = predicted, color = "Cold season")) +
   geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), fill = "blue", alpha = .1) + 
   geom_line(warmcold1_temp, mapping = aes(x, y = predicted, color = "Warm season")) + 
@@ -336,68 +260,26 @@ ggplot(warmcold0_temp) +
   scale_color_manual(name = "Season", values = c("Cold season" = "blue", "Warm season" = "red")) + 
   labs(x = "TEMPC24H", y = "Predicted SBP")
 
-# ggplot(warmcold0_bc) +
-#   #geom_point(nas_bp, mapping = aes(x = TEMPC24H, y = SBP), alpha = 0.1) +
-#   geom_line(aes(x, y = predicted, color = "Cold season")) +
-#   geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), fill = "blue", alpha = .1) + 
-#   geom_line(warmcold1_bc, mapping = aes(x, y = predicted, color = "Warm season")) + 
-#   geom_ribbon(warmcold1_bc, mapping = aes(x = x, ymin = conf.low, ymax = conf.high), fill = "red", alpha = .1) + 
-#   scale_color_manual(name = "Season", values = c("Cold season" = "blue", "Warm season" = "red")) + 
-#   labs(x = "TEMPC24H", y = "Predicted SBP")
-
-
-
-# stratified model by WARMCOLD
-# 
-# mod2_warmcold0 <- gamm(log(SBP) ~ TEMPC24H + BC24H + RHUM24H + 
-#                     # control for seasonality 
-#                     SINETIME + COSTIME + WKDAY,
-#                   random = list(ID =  ~ 1),
-#                   family = gaussian(), data = nas_bp[nas_bp$WARMCOLD == "0",])
-# 
-# mod2_warmcold1 <- gamm(log(SBP) ~ TEMPC24H + BC24H + RHUM24H + 
-#                     # control for seasonality 
-#                     SINETIME + COSTIME + WKDAY,
-#                   random = list(ID =  ~ 1),
-#                   family = gaussian(), data = nas_bp[nas_bp$WARMCOLD == "1",])
-# 
-# 
-# as_flextable(mod2_warmcold0$gam)
-# as_flextable(mod2_warmcold1$gam)
-# 
-# warmcold_strat_0 <- ggpredict(mod2_warmcold0$gam, terms = "TEMPC24H")
-# 
-# warmcold_strat_1 <- ggpredict(mod2_warmcold1$gam, terms = "TEMPC24H")
-# 
-# ggplot(warmcold_strat_0) +
-#   geom_point(nas_bp, mapping = aes(x = TEMPC24H, y = SBP, color = WARMCOLD), alpha = 0.1, show.legend = FALSE) +
-#   geom_line(aes(x, y = predicted, color = "Cold season")) +
-#   geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), fill = "blue", alpha = .1) + 
-#   geom_line(warmcold_strat_1, mapping = aes(x, y = predicted, color = "Warm season")) + 
-#   geom_ribbon(warmcold_strat_1, mapping = aes(x = x, ymin = conf.low, ymax = conf.high), fill = "red", alpha = .1) + 
-#   scale_color_manual(name = "Season", values = c("Cold season" = "blue", "Warm season" = "red", "0" = "blue", "1" = "red"))
 
 ```
 
 
 - Are there any subgroups that are particularly vulnerable to the effect of same-day BC exposure on SBP?
 
-
 ```{r emm}
 
 model_fun <- list()
-mod2_emm <- list()
+mod2_bc_emm <- list()
 int_term <- list()
 for(i in cat_columns){
   
-  model_fun[[i]] <- paste0("log(SBP) ~ TEMPC24H + BC24H + RHUM24H + ",
-                      i, "*BC24H + SINETIME + COSTIME + WKDAY")
+  model_fun[[i]] <- paste0("SBP ~ TEMPC24H + BC24H + ", i, "*BC24H", mod2_covars)
   
-  mod2_emm[[i]] <- gamm(as.formula(model_fun[[i]]),
+  mod2_bc_emm[[i]] <- gamm(as.formula(model_fun[[i]]),
                     random = list(ID =  ~ 1),
                     family = gaussian(), data = nas_bp)
   
-  int_term[[i]] <- tidy(mod2_emm[[i]]$gam, parametric = TRUE) %>% 
+  int_term[[i]] <- tidy(mod2_bc_emm[[i]]$gam, parametric = TRUE) %>% 
     filter(str_detect(term, ":"))
   
 }
@@ -417,27 +299,31 @@ Are there lagged effects of temperature and BC exposure on SBP?
 
 ```{r lag}
 
-# ¯\ (ツ) /¯
-mod2_lag <- gamm(log(SBP) ~ TEMPC24H + TMPCD1 + TMPCD2 + 
-                   BC24H + BCD1 + BCD2 +
-                   RHUM24H +
-                   # control for seasonality 
-                   SINETIME + COSTIME + WKDAY,
+mod2_temp_lag <- gamm(as.formula(paste0("SBP ~ TEMPC24H + TMPCD1 + TMPCD2", mod2_covars)),
                  random = list(ID =  ~ 1),
                  family = gaussian(), data = nas_bp)
 
-flextable::as_flextable(mod2_lag$gam)
-
-
-mod2_lag <- gamm(log(SBP) ~ TEMPC24H + TMPCD1 + TMPCD2 + 
-                   BC24H + BCD1 + BCD2 +
-                   RHUM24H +
-                   # control for seasonality 
-                   SINETIME + COSTIME + WKDAY,
+mod2_bc_lag <- gamm(as.formula(paste0("SBP ~ TEMPC24H + BC24H + BCD1 + BCD2", mod2_covars)),
                  random = list(ID =  ~ 1),
                  family = gaussian(), data = nas_bp)
+
+as_flextable(mod2_temp_lag$gam)
+as_flextable(mod2_bc_lag$gam)
+# we can just interpret these estimates and CIs and p-values as they are!
+
+
+mod2_temp_MA<- gamm(as.formula(paste0("SBP ~ TMPCMA2", mod2_covars)),
+                 random = list(ID =  ~ 1),
+                 family = gaussian(), data = nas_bp)
+
+
+mod2_bc_MA<- gamm(as.formula(paste0("SBP ~ TEMPC24H + BCMA2", mod2_covars)),
+                 random = list(ID =  ~ 1),
+                 family = gaussian(), data = nas_bp)
+
+as_flextable(mod2_temp_MA$gam)
+as_flextable(mod2_bc_MA$gam)
 # assume that the effect is the same across the two days (if you use the moving avg)
-# do temp and bc separately 
 
 
 
