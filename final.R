@@ -242,6 +242,36 @@ inspect_int_terms <- bind_rows(int_term, .id = "model") %>%
                               TRUE ~ paste0(round(p.value, 4))))
 
 
+
+# stratified model by WARMCOLD
+# 
+# mod2_warmcold0 <- gamm(log(SBP) ~ TEMPC24H + BC24H + RHUM24H + 
+#                     # control for seasonality 
+#                     SINETIME + COSTIME + WKDAY,
+#                   random = list(ID =  ~ 1),
+#                   family = gaussian(), data = nas_bp[nas_bp$WARMCOLD == "0",])
+# 
+# mod2_warmcold1 <- gamm(log(SBP) ~ TEMPC24H + BC24H + RHUM24H + 
+#                     # control for seasonality 
+#                     SINETIME + COSTIME + WKDAY,
+#                   random = list(ID =  ~ 1),
+#                   family = gaussian(), data = nas_bp[nas_bp$WARMCOLD == "1",])
+# 
+# 
+# as_flextable(mod2_warmcold0$gam)
+# as_flextable(mod2_warmcold1$gam)
+# 
+# warmcold_strat_0 <- ggpredict(mod2_warmcold0$gam, terms = "TEMPC24H")
+# 
+# warmcold_strat_1 <- ggpredict(mod2_warmcold1$gam, terms = "TEMPC24H")
+# 
+# ggplot(warmcold_strat_0) +
+#   geom_point(nas_bp, mapping = aes(x = TEMPC24H, y = SBP, color = WARMCOLD), alpha = 0.1, show.legend = FALSE) +
+#   geom_line(aes(x, y = predicted, color = "Cold season")) +
+#   geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), fill = "blue", alpha = .1) + 
+#   geom_line(warmcold_strat_1, mapping = aes(x, y = predicted, color = "Warm season")) + 
+#   geom_ribbon(warmcold_strat_1, mapping = aes(x = x, ymin = conf.low, ymax = conf.high), fill = "red", alpha = .1) + 
+#   scale_color_manual(name = "Season", values = c("Cold season" = "blue", "Warm season" = "red", "0" = "blue", "1" = "red"))
 # check: 
 # mod2_emm$lme$coef$fixed[3] + mod2_emm$lme$coef$fixed[15]
 # sqrt(mod2_emm$lme$varFix[9,9])
@@ -256,6 +286,10 @@ inspect_int_terms <- bind_rows(int_term, .id = "model") %>%
 ## make some histograms for the effect heterogeneity 
 
 ## lagged effects 
+
+
+
+
 
 
 # subgroups -- should we do interaction by race 
@@ -316,3 +350,166 @@ ll[4,] <- ll[2,]^3 #i^3 term
 
 
 ll <- t(ll) #transpose
+
+
+
+
+
+lagm <- function(x, n) {
+  nn <- length(x)
+  xn <- c(rep(NA, n), x[1:(nn - n)])
+  return(xn)
+}
+
+ll <- matrix(nrow=4,ncol=6)
+ll[1,] <- rep(1,6) #intercept
+ll[2,] <- 0:5 #lag0 to lag5, i term
+ll[3,] <- ll[2,]^2 #i^2 term
+ll[4,] <- ll[2,]^3 #i^3 term
+
+ll <- t(ll) #transpose
+
+lent <- length(nas_bp$ID)
+xx <- matrix(nrow = lent, ncol = 6)
+yy <- matrix(nrow = lent, ncol = 6)
+for (i in 1:6) {
+  xx[, i] <- lagm(nas_bp$TEMPC24H, (i - 1))
+  yy[,i] <-  lagm(nas_bp$BC24H, (i - 1))
+}
+
+## Then the Z's are
+
+zz<-xx%*%ll
+zz2 <- xx%*%ll
+
+#these are the same -- the lag part worked right 
+summary(xx[,2])
+summary(nas_bp$TMPCD1)
+
+
+mod2_lag <- gamm(log(SBP) ~ zz[,1] + zz[,2] + zz[,3] + 
+                   zz2[,1] + zz2[,2] + zz2[,3] +
+                   RHUM24H +
+                   # control for seasonality 
+                   SINETIME + COSTIME + WKDAY,
+                 random = list(ID =  ~ 1),
+                 family = gaussian(), data = nas_bp)
+
+mod2_lag_tidy <- tidy(mod2_lag$gam, parametric = TRUE)
+
+
+temp_dl <- as.matrix(mod2_lag_tidy$estimate[str_detect(mod2_lag_tidy$term, "MPC")])
+rownames(temp_dl) <- mod2_lag_tidy$term[str_detect(mod2_lag_tidy$term, "MPC")]
+
+temp_beta_matrix <- ll%*%as.matrix(temp_dl)
+temp_cov <-  ll%*%as.matrix(vcov(mod2_lag_tidy$gam)[2:4,2:4])%*%t(ll)
+temp_se <- sqrt(diag(temp_cov))
+
+temp_est_se <- data.frame(var=c('temp_lag3','temp_lag1','temp_lag0'),
+                          coef=temp_beta_matrix,
+                          se=temp_se)
+
+
+bc_dl <- as.matrix(mod2_lag_tidy$estimate[str_detect(mod2_lag_tidy$term, "BC")])
+rownames(bc_dl) <- mod2_lag_tidy$term[str_detect(mod2_lag_tidy$term, "BC")]
+
+
+
+
+# create empty matrix
+x_weights <- matrix(nrow=4,ncol=3)
+
+# fill in matrix
+x_weights[1,] <- rep(1,3) # for the intercept
+x_weights[2,] <- 0:2 # for lag0 to lag5 of ozone, i term
+x_weights[3,] <- x_weights[2,]^2 # i^2 term
+x_weights[4,] <- x_weights[2,]^3 # i^3 term
+
+# We transpose the matrix so that we can conduct matrix multiplication
+x_weights <- t(x_weights)
+
+
+# create matrix with the lagged ozone
+lag_mat <- matrix(nrow=length(nas_bp$ID), ncol=3)
+lag_mat[,1] <- nas_bp$TEMPC24H
+lag_mat[,2] <- nas_bp$TMPCD1
+lag_mat[,3] <- nas_bp$TMPCD2
+
+for (i in 1:3) {
+  lag_mat[,i]<-lag_ozone(nas_bp$TEMPC24H,(i-1))
+}
+
+# Let's calculate the 'z' coefficients
+z_coeff<-lag_mat%*%x_weights
+
+mod2_lag <- gamm(log(SBP) ~ z_coeff[,1] + z_coeff[,2] + z_coeff[,3] + 
+                   BC24H + BCD1 + BCD2 +
+                   RHUM24H +
+                   # control for seasonality 
+                   SINETIME + COSTIME + WKDAY,
+                 random = list(ID =  ~ 1),
+                 family = gaussian(), data = nas_bp)
+
+
+
+# Extract 'c' coefficients
+c_coeff <- as.matrix(mod2_lag$gam$coefficients[2:4])
+
+# Now multiple them by the x weights to get the 'b's, which are what we are interested in.
+b_coeff <- x_weights%*%as.matrix(c_coeff)
+
+# Typically, we are also interested in inference (e.g., 95% CI). So let's first extract the covariance matrix from the model. Then, we need to multiply them by the weights squared
+ozone_covar <- x_weights%*%as.matrix(vcov(mod)[8:11, 8:11])%*%t(x_weights)
+
+# We square root the variance, which are in the diagonal of the covariance matrix, to get the standard error
+ozone_se <- sqrt(diag(ozone_covar))
+
+# Last step! Let's put the beta estimates and the standard errors together in a single dataframe for easy plotting latter.
+ozone_results <- data.frame(lag=c(5:0),
+                            coef=b_coeff, se=ozone_se)
+
+
+mod_tidy <- broom::tidy(mod2_lag$gam, parametric = TRUE)
+o3_dl <- as.matrix(mod_tidy$estimate[str_detect(mod_tidy$term, "z_")])
+rownames(o3_dl) <- mod_tidy$term[str_detect(mod_tidy$term, "z_")]
+
+
+#now multiple them by the weights to become b's
+o3_est <- lag_mat%*%as.matrix(o3_dl) #beta matrix
+
+# o3_cov <- ll%*%as.matrix(vcov(mod)[8:11,8:11])%*%t(ll)
+# replace the code above with this
+o3_cov <- lag_mat%*%as.matrix(vcov(mod2_lag$lme)[str_detect(rownames(vcov(mod2_lag$lme)), "z_"), str_detect(colnames(vcov(mod2_lag$lme)), "z_")])%*%t(ll)
+
+o3_se <- sqrt(diag(o3_cov))
+
+
+
+# mod2_bc_warmcold <- gamm(SBP ~ TEMPC24H  + 
+#                        BC24H*WARMCOLD + 
+#                        RHUM24H + 
+#                        BMI + 
+#                        s(AGE, bs = 'cr', fx = FALSE) + 
+#                        NEDUC + 
+#                        SMK + TWODRINK + STATIN + FBG + 
+#                        # control for seasonality 
+#                        SINETIME + COSTIME + WKDAY, 
+#                      random = list(ID =  ~ 1),
+#                      family = gaussian(), data = nas_bp)
+
+
+# as_flextable(mod2_bc_warmcold$gam)
+
+
+# warmcold0_bc <- ggpredict(mod2_bc_warmcold$gam, terms = "BC24H", condition = c(WARMCOLD = "0"))
+# warmcold1_bc <- ggpredict(mod2_bc_warmcold$gam, terms = "BC24H", condition = c(WARMCOLD = "1"))
+
+# ggplot(warmcold0_bc) +
+#   #geom_point(nas_bp, mapping = aes(x = TEMPC24H, y = SBP), alpha = 0.1) +
+#   geom_line(aes(x, y = predicted, color = "Cold season")) +
+#   geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), fill = "blue", alpha = .1) + 
+#   geom_line(warmcold1_bc, mapping = aes(x, y = predicted, color = "Warm season")) + 
+#   geom_ribbon(warmcold1_bc, mapping = aes(x = x, ymin = conf.low, ymax = conf.high), fill = "red", alpha = .1) + 
+#   scale_color_manual(name = "Season", values = c("Cold season" = "blue", "Warm season" = "red")) + 
+#   labs(x = "TEMPC24H", y = "Predicted SBP")
+
