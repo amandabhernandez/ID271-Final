@@ -1,0 +1,310 @@
+---
+title: "ID 271 Final"
+author: "Amanda Hernandez, Ruby Hickman, Abby Zhong"
+date: "2023-03-10"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	fig.width = 10,
+	message = FALSE,
+	warning = FALSE
+)
+
+pacman::p_load(tidyverse, mgcv, splines, broom, broom.mixed, ggeffects, gtsummary, 
+               flextable, cowplot)
+
+
+#set some global preferences
+theme_set(theme_bw())
+options(digits = 4)
+
+
+tbl_theme <- function(dat, gt = FALSE, caption = "", footer = ""){
+  if(gt == FALSE) {
+    dat_flex <- dat %>% 
+    flextable()
+  }
+  else {
+    dat_flex <- dat %>% 
+    as_flex_table(show_coltype = FALSE) 
+  }
+  
+  dat_flex %>% 
+    align(align = "left", part = "all") %>% 
+    set_caption(caption = caption) %>% 
+    add_footer_lines(footer) %>% 
+    color(part = "footer", color = "#666666") %>% 
+    set_table_properties(layout = "autofit", width = 1)
+}
+
+cat_columns <- c("WARMCOLD", "WKDAY", "RACE", "TWODRINK", 
+                 "SMK", "CHD", "DIABETE", "FBG", "STATIN")
+
+nas_bp <- readRDS("nas_bp.rds") %>%
+  mutate(across(any_of(cat_columns), factor))
+
+
+
+```
+
+
+## Methods
+
+### Statistical Analysis
+
+We calculated summary statistics (median and IQR or mean and SD for continuous covariates, n and % in each group for categorical) of our exposures, ambient black carbon (BC) and temperature, of the outcome, systolic blood pressure (SBP), and of key covariates. As SBP was approximately normally distributed in the population, we kept it untransformed for the analysis. 
+
+To assess the associations between ambient black carbon (BC) and ambient temperature with SBP in the Normative Aging Study, we constructed a series of linear mixed effects models using the mgcv package (version 1.8-42, R version 4.2.2) (1) with random intercepts for each subject. We constructed separate models for temperature and for black carbon. The model to estimate the effect of black carbon also included temperature as it is a predictor of black carbon (2), however, the model to estimate the effect of temperature did not include black carbon, as it is not likely to confound the relationship. For both exposures, models we adjusted for the following set of covariates: relative humidity (on the day of the visit), body-mass index (BMI), age, years of education, smoking status (never (reference), former, current), drinking ≥2 drinks per day, taking a statin medication, and fasting blood glucose (three level: <110mg/dL (reference), >110 or <126 mg/dL, and >126 mg/dL). While the individual level covariates are not predictors of ambient temperature or BC, in the linear regression setting including known predictors of the outcome can increase precision of estimates. We accounted for seasonal and long-term trends over the course of the study (6 years) with terms for the sine of time, cosine of time, and day of the week. 
+
+First, we assessed linearity of our exposures and relative humidity with SBP by using penalized cubic spline terms. We used the estimated degrees of freedom and visual inspection to judge the linearity of the dose-response curves. Subsequent models used a linear term for variables that displayed an apparently linear relationship. 
+
+We assessed for effect modification using product terms. For the temperature and SBP relationship, we examined effect modification by season (warm vs. cold). We assessed effect modification of the BC and SBP relationship by personal characteristics (race/ethnicity, drinking ≥2 drinks per day, smoking status, diabetes diagnosis, fasting blood glucose, statin medication, coronary heart disease). Given the exploratory nature of this analysis, we did not adjust for multiple testing and therefore p values for effect heterogeneity should be interpreted with caution. 
+
+We assessed confounding by the previous two days’ exposures for each model using an unconstrained lag approach. We added the previous day and 2 day lagged BC or temperature measurement into each model and assessed for significance of effects and amount of change in the same-day exposure coefficient. 
+For all models, we present the effect estimate for same-day temperature as the estimated change in SBP for a 1 degree Celsius increase in temperature and for black carbon as the estimated change for a 1 µg/m3 increase. 
+
+<br>
+
+## Results
+
+### Main results 
+
+Same-day 24-hour black carbon (BC) was right-skewed and ranged from 0.12 to 4.05 µg/m3 with a median value of 0.85µg/m3. Same-day temperature ranged from -13.9 to 30.97C, with a median of 13.29C. Systolic blood pressure (SBP) was approximately normally distributed with a mean of 130.9mmHg (SD: 18mmHg).
+
+```{r fig1, fig.cap= "Figure 1: Distribution of SBP, same-day 24 hour black carbon and temperature."}
+
+nas_bp %>% 
+  select(-any_of(cat_columns)) %>% 
+  pivot_longer(names_to = "variable", values_to = "value", -ID) %>% 
+  subset(variable %in% c("SBP", "TEMPC24H", "BC24H")) %>% 
+           ggplot(aes(x = value)) + 
+           geom_histogram(aes(y = after_stat(density)),
+                          color = "black",
+                          fill = "white",
+                          bins = 10) +
+           geom_density(fill = "red", alpha = 0.25)+ 
+           facet_wrap(~variable, scales = "free")
+
+```
+	
+<br>
+After controlling for seasonality, relative humidity (RH), and personal-level predictors, the association between same-day temperature and SBP appeared to be linear in the random effects model. Similarly, the association between same-day BC and SBP was linear (S1). 
+
+
+Figure 2 shows the dose-response relationships of same-day temperature and BC with SBP. Though not statistically significant, same-day temperature was negatively associated with SBP. On the other hand, same-day BC was significantly and positively associated with SBP. A 1 µg/m3 increase in same-day BC was associated with a 2.058mmHg increase (95%CI: 0.8054, 3.311, p = 0.0013) in SBP, on average, conditional on other covariates. Every 1 Celsius increase in same-day temperature was associated with a 0.0737mmHg reduction (95%CI: -0.2331, 0.08568, p = 0.3549) in SBP (Table 1).  
+
+
+```{r table 1}
+
+# model 2 -- exp + confounders + precision vars wo splines
+
+mod2_covars <- c(" +  RHUM24H + BMI + NEDUC + s(AGE, bs = 'cr', fx = FALSE) + SMK + TWODRINK + STATIN + FBG + SINETIME + COSTIME + WKDAY")
+
+mod2_temp <- gamm(as.formula(paste0("SBP ~ TEMPC24H", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
+
+# as_flextable(mod2_temp$gam)
+# plot(mod2_temp$gam)
+
+mod2_bc <- gamm(as.formula(paste0("SBP ~ BC24H + TEMPC24H", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
+
+# as_flextable(mod2_bc$gam)
+# plot(mod2_bc$gam)
+
+eff_estimate <- function(mod, term_keep){
+  broom.mixed::tidy(mod, parametric = TRUE, conf.int = TRUE) %>% 
+  filter(term %in% c(term_keep))
+}
+
+bind_rows(eff_estimate(mod2_temp$gam, term_keep = "TEMPC24H"), 
+          eff_estimate(mod2_bc$gam, term_keep = "BC24H")) %>% 
+  tbl_theme(caption = "Table 1: Effect estimates of same-day temperature and BC with SBP")
+
+```
+<br> 
+
+```{r DR, fig.cap = "Figure 2. Dose-response relationship between same-day temperature, BC, and SBP."}
+
+dr_mod2_temp <- ggpredict(mod2_temp$gam, terms = "TEMPC24H") %>% 
+  plot()
+
+dr_mod2_bc <- ggpredict(mod2_bc$gam, terms = "BC24H") %>% 
+  plot()
+
+plot_grid(dr_mod2_temp, dr_mod2_bc) 
+```
+
+<br>
+
+### Secondary results 
+
+After examining effect measure modification by diabetes, we concluded that diabetes did not modify the effect of same-day BC exposure on SBP (p = 0.2707) in this study. A similar result was observed for same-day temperature (p = 0.8766) (S2). Additionally, after incorporating an interaction term between same-day temperature and cold/warm seasons, we found that the association between same-day temperature and SBP did not vary significantly by warm and cold seasons (p = 0.8379) (S2). Figure 3 shows the dose-response relationships for warm and cold seasons, which both exhibit linear trends, and the two slopes for cold and warm seasons show only slight variations, confirming the absence of statistical significance. 
+
+<br>
+
+```{r warmcold, fig.cap = "Figure 3: Dose-response relationships between same-day temperature and SBP by warm and cold seasons."}
+
+# effect modification by WARMCOLD
+
+mod2_temp_warmcold <- gamm(as.formula(paste0("SBP ~ TEMPC24H*WARMCOLD", mod2_covars)),
+                       random = list(ID =  ~ 1),
+                       family = gaussian(),
+                       data = nas_bp)
+
+warmcold0_temp <- ggpredict(mod2_temp_warmcold$gam, terms = "TEMPC24H", condition = c(WARMCOLD = "0"))
+warmcold1_temp <- ggpredict(mod2_temp_warmcold$gam, terms = "TEMPC24H", condition = c(WARMCOLD = "1"))
+
+
+ggplot(warmcold0_temp) +
+  geom_line(aes(x, y = predicted, color = "Cold season")) +
+  geom_ribbon(aes(x = x, ymin = conf.low, ymax = conf.high), fill = "blue", alpha = .1) + 
+  geom_line(warmcold1_temp, mapping = aes(x, y = predicted, color = "Warm season")) + 
+  geom_ribbon(warmcold1_temp, mapping = aes(x = x, ymin = conf.low, ymax = conf.high), fill = "red", alpha = .1) + 
+  scale_color_manual(name = "Season", values = c("Cold season" = "blue", "Warm season" = "red")) + 
+  labs(x = "TEMPC24H", y = "Predicted SBP")
+
+```
+
+
+<br>
+Two subgroups were particularly vulnerable to the effect of same-day BC exposure on SBP, including those who reported consuming greater than two alcohol drinks per day (p = 0.0341) and those with coronary heart disease (p = 0.0156) (S2). Among those with greater than two alcohol drinks per day, every 1 µg/m3 increase in same-day BC is associated with 2.81mmHg increase in SBP, on average, conditional on other covariates. Among those with coronary heart disease (CHD), every 1 µg/m3 increase in same-day BC is associated with 2.88mmHg increase in SBP. Therefore, variables such as alcohol consumption and CHD explained heterogeneity in the associations between same-day BC and SBP. CHD explained heterogeneity in the associations between same-day temperature and SBP (p = 0.004394) in which among those with CHD, every 1 Celsius increase in same-day temperature is associated with 0.236mmHg increase in SBP (S2).
+
+There were no lagged effects of temperature exposure on SBP ($p_{lag1}$ = 0.9146, $p_{lag2}$ = 0.5999) (S3a). We observed a lagged effect of BC exposure on SBP in which a one-day lag was statistically significant ($p_{lag1}$  = 0.0358, $p_{lag2}$ = 0.074) (S3b). 
+
+<br>
+
+## Conclusion
+
+Our mixed effects models show that same-day temperature and BC were both linearly associated with SBP after accounting for seasonality, relative humidity (RH), and personal-level predictors. While same-day temperature was negatively associated with SBP, same-day BC had a significant positive association with SBP. Alcohol consumption and coronary heart disease explained effect heterogeneity in the two associations. Despite the absence of lagged effects of temperature on SBP, there were lagged effects of BC on SBP. 
+
+<br>
+
+## Supplemental
+
+```{r S0}
+
+tbl_summary(nas_bp, 
+            include = -c("ID", "DATE", "YEAR", "SINETIME", "COSTIME")) %>% 
+  tbl_theme(gt = TRUE, caption = "S0: Descriptive statistics for relevant variables in the study population") 
+
+
+```
+
+
+```{r S1}
+
+# model 1 -- exposure + confounders + predictors w splines
+
+mod1_temp <- gamm(SBP ~ s(TEMPC24H, bs = 'cr', fx = FALSE) + 
+                    s(RHUM24H, bs = 'cr', fx = FALSE) + 
+                    s(BMI, bs = 'cr', fx = FALSE) + 
+                    s(AGE, bs = 'cr', fx = FALSE) + 
+                    s(NEDUC, bs = 'cr', fx = FALSE) + 
+                    SMK + TWODRINK + STATIN + FBG + 
+                    # control for seasonality 
+                    SINETIME + COSTIME + WKDAY, 
+                  random = list(ID =  ~ 1),
+                  family = gaussian(), data = nas_bp)
+
+
+as_flextable(mod1_temp$gam) %>% 
+    set_caption(caption = "S1a: Preliminary model estimating the effect of same-day temperature with SBP")
+
+mod1_bc <- gamm(SBP ~ BC24H + TEMPC24H + 
+                  RHUM24H + 
+                  BMI + 
+                  s(AGE, bs = 'cr', fx = FALSE) + 
+                  NEDUC + 
+                  SMK + TWODRINK + STATIN + FBG + 
+                  # control for seasonality 
+                  SINETIME + COSTIME + WKDAY, 
+                random = list(ID =  ~ 1),
+                family = gaussian(), data = nas_bp)
+
+
+as_flextable(mod1_bc$gam)%>% 
+    set_caption(caption = "S1b: Preliminary model estimating the effect of same-day black carbon with SBP")
+
+# all edfs = 1 except for age, so they are linear and we can remove the splines
+
+
+```
+
+
+```{r S2}
+
+mod2_emm <- list()
+int_term <- list()
+int_term_df <- list()
+
+for(i in cat_columns){
+  
+  for(m in c("TEMPC24H", "BC24H")){
+    if(m == "TEMPC24H"){
+      model_fun <- paste0("SBP ~ TEMPC24H +", i, "*TEMPC24H", mod2_covars)
+    }
+    
+    if(m == "BC24H"){
+      model_fun <- paste0("SBP ~ TEMPC24H + BC24H + ", i, "*BC24H", mod2_covars)
+    }
+    
+    mod2_emm[[m]] <- gamm(as.formula(model_fun),
+                             random = list(ID =  ~ 1),
+                             family = gaussian(), data = nas_bp)
+
+    
+    int_term[[m]] <- tidy(mod2_emm[[m]]$gam, parametric = TRUE) %>% 
+      filter(str_detect(term, ":"))
+    
+
+  }
+  
+  int_term_df[[i]] <- bind_rows(int_term, .id = "model")
+  
+}
+
+bind_rows(int_term_df, .id = "interaction term") %>% 
+  unnest() %>% 
+  mutate(p = case_when(p.value < 0.001 ~ "***",
+                       p.value < 0.01 ~ "**",
+                       p.value < 0.05 ~ "*",
+                              TRUE ~ "")) %>% 
+  tbl_theme(caption = "S2: Effect measure modification of effect of same-day temperature and BC on SBP.")
+
+```
+
+```{r S3}
+mod2_temp_lag <- gamm(as.formula(paste0("SBP ~ TEMPC24H + TMPCD1 + TMPCD2", mod2_covars)),
+                 random = list(ID =  ~ 1),
+                 family = gaussian(), data = nas_bp)
+
+as_flextable(mod2_temp_lag$gam) %>% 
+    set_caption(caption = "S3a: Lagged effects of Temperature on SBP")
+
+```
+
+```{r}
+
+mod2_bc_lag <- gamm(as.formula(paste0("SBP ~ TEMPC24H + BC24H + BCD1 + BCD2", mod2_covars)),
+                 random = list(ID =  ~ 1),
+                 family = gaussian(), data = nas_bp)
+
+as_flextable(mod2_bc_lag$gam) %>% 
+    set_caption(caption = "S3b: Lagged effects of Black Carbon on SBP")
+```
+
+## References
+
+1.	Wood S. mgcv: Mixed GAM Computation Vehicle with Automatic Smoothness Estimation [Internet]. 2023 [cited 2023 Mar 7]. Available from: https://CRAN.R-project.org/package=mgcv
+2.	Abu Awad Y, Koutrakis P, Coull BA, Schwartz J. A spatio-temporal prediction model based on support vector machine regression: Ambient Black Carbon in three New England States. Environmental Research. 2017 Nov 1;159:427–34.
+3. Schwartz J, Alexeeff SE, Mordukhovich I, Gryparis A, Vokonas P, Suh H, Coull BA. Association between long-term exposure to traffic particles and blood pressure in the Veterans Administration Normative Aging Study. Occup Environ Med. 2012 Jun;69(6):422-7. doi: 10.1136/oemed-2011-100268. Epub 2012 Mar 1. PMID: 22383587; PMCID: PMC3597742.
+
