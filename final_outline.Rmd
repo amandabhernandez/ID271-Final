@@ -268,29 +268,44 @@ ggplot(warmcold0_temp) +
 
 ```{r emm}
 
-model_fun <- list()
-mod2_bc_emm <- list()
+
+mod2_emm <- list()
 int_term <- list()
+int_term_df <- list()
+
 for(i in cat_columns){
   
-  model_fun[[i]] <- paste0("SBP ~ TEMPC24H + BC24H + ", i, "*BC24H", mod2_covars)
+  for(m in c("TEMPC24H", "BC24H")){
+    if(m == "TEMPC24H"){
+      model_fun <- paste0("SBP ~ TEMPC24H +", i, "*TEMPC24H", mod2_covars)
+    }
+    
+    if(m == "BC24H"){
+      model_fun <- paste0("SBP ~ TEMPC24H + BC24H + ", i, "*BC24H", mod2_covars)
+    }
+    
+    mod2_emm[[m]] <- gamm(as.formula(model_fun),
+                             random = list(ID =  ~ 1),
+                             family = gaussian(), data = nas_bp)
+
+    
+    int_term[[m]] <- tidy(mod2_emm[[m]]$gam, parametric = TRUE) %>% 
+      filter(str_detect(term, ":"))
+    
+
+  }
   
-  mod2_bc_emm[[i]] <- gamm(as.formula(model_fun[[i]]),
-                    random = list(ID =  ~ 1),
-                    family = gaussian(), data = nas_bp)
-  
-  int_term[[i]] <- tidy(mod2_bc_emm[[i]]$gam, parametric = TRUE) %>% 
-    filter(str_detect(term, ":"))
+  int_term_df[[i]] <- bind_rows(int_term, .id = "model")
   
 }
 
-#inspect interaction terms significance
-bind_rows(int_term, .id = "model") %>% 
+bind_rows(int_term_df, .id = "interaction term") %>% 
+  unnest() %>% 
   mutate(p = case_when(p.value < 0.001 ~ "***",
                        p.value < 0.01 ~ "**",
                        p.value < 0.05 ~ "*",
-                              TRUE ~ ""))
-
+                              TRUE ~ "")) %>% 
+  tbl_theme()
 
 ```
 
